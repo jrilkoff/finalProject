@@ -1,8 +1,32 @@
 from transformers import BertForSequenceClassification, BertTokenizer
 import torch
 
+torch.cuda.is_available()
+
+DEBUG = False
+
 finbert = 'ProsusAI/finbert'
 bert = 'bert-base-uncased'
+
+def text_tokenizer(txt, bert_model='finbert'):
+
+    if DEBUG:
+        print(f'3-{txt}')
+
+    if bert_model == 'bert':
+        tokenizer = BertTokenizer.from_pretrained(bert)
+    else:
+        tokenizer = BertTokenizer.from_pretrained(finbert)
+
+    tokens = tokenizer.encode_plus(txt, add_special_tokens=False)
+
+    input_ids = tokens['input_ids']
+    attention_mask = tokens['attention_mask']
+
+    return input_ids, attention_mask
+
+
+###################################################################################
 
 def small_text(input_ids, attention_mask, bert_model='finbert'):
 
@@ -66,22 +90,13 @@ def large_text(input_ids, attention_mask, total_len, bert_model='finbert'):
     
     return proba_list
 
-def text_tokenizer(txt, bert_model='finbert'):
-
-    if bert_model == 'bert':
-        tokenizer = BertTokenizer.from_pretrained(bert)
-    else:
-        tokenizer = BertTokenizer.from_pretrained(finbert)
-
-    tokens = tokenizer.encode_plus(txt, add_special_tokens=False)
-
-    input_ids = tokens['input_ids']
-    attention_mask = tokens['attention_mask']
-
-    return input_ids, attention_mask
+###################################################################################
 
 def sentiment_analysis(txt, bert_model='finbert'):
     
+    if DEBUG:
+        print(f'2-{txt}')
+
     input_ids, attention_mask = text_tokenizer(txt)
     window_length = 510
     total_len = len(input_ids)    
@@ -106,28 +121,47 @@ def get_mean_from_proba(proba_list):
         sentiment = torch.argmax(mean).item()
     return mean, sentiment, stacks
 
-def full_sentiment_run(txt, bert_model='finbert'):
-    proba_list = sentiment_analysis(txt, bert_model='finbert')
-    mean, stacks, sentiment = get_mean_from_proba(proba_list)
-    return 
+# def full_sentiment_run(txt, bert_model='finbert'):
+#     proba_list = sentiment_analysis(txt, bert_model='finbert')
+#     mean, stacks, sentiment = get_mean_from_proba(proba_list)
+#     return 
 
 def sentiment_applier(df):
+
+    if DEBUG:
+        print(f'1-{df}')
 
     proba_list = sentiment_analysis(df, bert_model='finbert')
     mean, sentiment, stacks = get_mean_from_proba(proba_list)
 
     return mean, sentiment
 
+###################################################################################
+
 def sentiment_poster(df):
 
-    sent_list = []
-    sent_list.append(df['body'].apply(lambda x: sentiment_applier(x)))
-    list2 = sent_list[0]
+    body_list = []
+    head_list = []
+
+    if DEBUG:
+        print(f'4 - {df}')
+
+    head_list.append(df['headline'].apply(lambda x: sentiment_applier(x)))
+    body_list.append(df['body'].apply(lambda x: sentiment_applier(x)))
+    
+    list2 = body_list[0]
+    list1 = head_list[0]
 
     for n in range(len(list2)): 
-        df.at[n, 'prob_posi'] = float(list2[n][0][0])
-        df.at[n, 'prob_nega'] = float(list2[n][0][1])
-        df.at[n, 'prob_neut'] = float(list2[n][0][2])
-        df.at[n, 'sentiment'] = int(list2[n][1])
+        df.at[n, 'body_posi'] = float(list2[n][0][0])
+        df.at[n, 'body_nega'] = float(list2[n][0][1])
+        df.at[n, 'body_neut'] = float(list2[n][0][2])
+        df.at[n, 'body_stmt'] = int(list2[n][1])
+
+    for n in range(len(list1)): 
+        df.at[n, 'head_posi'] = float(list1[n][0][0])
+        df.at[n, 'head_nega'] = float(list1[n][0][1])
+        df.at[n, 'head_neut'] = float(list1[n][0][2])
+        df.at[n, 'head_stmt'] = int(list1[n][1])
 
     return df
