@@ -1,14 +1,12 @@
 from transformers import BertForSequenceClassification, BertTokenizer
 import torch
 
-torch.cuda.is_available()
-
 DEBUG = False
 
 finbert = 'ProsusAI/finbert'
 bert = 'bert-base-uncased'
 
-def text_tokenizer(txt, bert_model='finbert'):
+def ori_text_tokenizer(txt, bert_model='finbert'):
 
     if DEBUG:
         print(f'3-{txt}')
@@ -25,10 +23,29 @@ def text_tokenizer(txt, bert_model='finbert'):
 
     return input_ids, attention_mask
 
+def text_tokenizer(txt):
+
+    if DEBUG:
+        print(f'3-{txt}')
+
+    bert_tokenizer = BertTokenizer.from_pretrained(bert)
+    finbert_tokenizer = BertTokenizer.from_pretrained(finbert)
+
+    bert_tokens = bert_tokenizer.encode_plus(txt, add_special_tokens=False)
+    finbert_tokens = finbert_tokenizer.encode_plus(txt, add_special_tokens=False)
+
+    bert_input_ids = bert_tokens['input_ids']
+    bert_attention_mask = bert_tokens['attention_mask']
+
+    finbert_input_ids = finbert_tokens['input_ids']
+    finbert_attention_mask = finbert_tokens['attention_mask']
+
+    return bert_input_ids, bert_attention_mask, finbert_input_ids, finbert_attention_mask
+
 
 ###################################################################################
 
-def small_text(input_ids, attention_mask, bert_model='finbert'):
+def ori_small_text(input_ids, attention_mask, bert_model='finbert'):
 
     if bert_model == 'bert':
         model = BertForSequenceClassification.from_pretrained(bert)
@@ -49,7 +66,7 @@ def small_text(input_ids, attention_mask, bert_model='finbert'):
 
     return proba_list
 
-def large_text(input_ids, attention_mask, total_len, bert_model='finbert'):
+def ori_large_text(input_ids, attention_mask, total_len, bert_model='finbert'):
 
     if bert_model == 'bert':
         model = BertForSequenceClassification.from_pretrained(bert)
@@ -90,9 +107,91 @@ def large_text(input_ids, attention_mask, total_len, bert_model='finbert'):
     
     return proba_list
 
+def small_text(bert_input_ids, bert_attention_mask, finbert_input_ids, finbert_attention_mask):
+
+    bert_model = BertForSequenceClassification.from_pretrained(bert)
+    finbert_model = BertForSequenceClassification.from_pretrained(finbert)
+
+    bert_proba_list = []
+    finbert_proba_list = []
+
+    bert_input_dict = {
+        'input_ids' : torch.Tensor([bert_input_ids]).long(),
+        'attention_mask' : torch.Tensor([bert_attention_mask]).int()
+    }
+
+    finbert_input_dict = {
+        'input_ids' : torch.Tensor([finbert_input_ids]).long(),
+        'attention_mask' : torch.Tensor([finbert_attention_mask]).int()
+    }
+
+    bert_outputs = bert_model(**bert_input_dict)
+    finbert_outputs = finbert_model(**finbert_input_dict)
+
+    bert_probabilities = torch.nn.functional.softmax(bert_outputs[0], dim =-1)
+    bert_proba_list.append(bert_probabilities)
+
+    finbert_probabilities = torch.nn.functional.softmax(finbert_outputs[0], dim =-1)
+    finbert_proba_list.append(finbert_probabilities)
+
+    return bert_proba_list, finbert_proba_list
+
+def large_text(bert_input_ids, bert_attention_mask, finbert_input_ids, finbert_attention_mask, total_len):
+
+    bert_model = BertForSequenceClassification.from_pretrained(bert)
+    finbert_model = BertForSequenceClassification.from_pretrained(finbert)
+
+    bert_proba_list = []
+    finbert_proba_list = []
+
+    start = 0
+    window_length = 510
+    loop = True
+
+    while loop:
+        end = start + window_length
+        if end >= total_len:
+            loop = False
+            end = total_len
+
+        # 1 => Define the text chunk
+        bert_input_ids_chunk = bert_input_ids[start : end]
+        finbert_input_ids_chunk = finbert_input_ids[start : end]
+        bert_attention_mask_chunk = bert_attention_mask[start : end]
+        finbert_attention_mask_chunk = finbert_attention_mask[start : end]
+        
+        # 2 => Append [CLS] and [SEP]
+        bert_input_ids_chunk = [101] + bert_input_ids_chunk + [102]
+        finbert_input_ids_chunk = [101] + finbert_input_ids_chunk + [102]
+        bert_attention_mask_chunk = [1] + bert_attention_mask_chunk + [1]
+        finbert_attention_mask_chunk = [1] + finbert_attention_mask_chunk + [1]
+        
+        # 3 => Convert regular python list to Pytorch Tensor
+        bert_input_dict = {
+            'input_ids' : torch.Tensor([bert_input_ids_chunk]).long(),
+            'attention_mask' : torch.Tensor([bert_attention_mask_chunk]).int()
+        }
+
+        finbert_input_dict = {
+            'input_ids' : torch.Tensor([finbert_input_ids_chunk]).long(),
+            'attention_mask' : torch.Tensor([finbert_attention_mask_chunk]).int()
+        }
+        
+        bert_outputs = bert_model(**bert_input_dict)
+        finbert_outputs = finbert_model(**finbert_input_dict)
+        
+        bert_probabilities = torch.nn.functional.softmax(bert_outputs[0], dim = -1)
+        finbert_probabilities = torch.nn.functional.softmax(finbert_outputs[0], dim = -1)
+        bert_proba_list.append(bert_probabilities)
+        finbert_proba_list.append(finbert_probabilities)
+
+        start = end
+    
+    return bert_proba_list, finbert_proba_list
+
 ###################################################################################
 
-def sentiment_analysis(txt, bert_model='finbert'):
+def ori_sentiment_analysis(txt, bert_model='finbert'):
     
     if DEBUG:
         print(f'2-{txt}')
@@ -109,7 +208,7 @@ def sentiment_analysis(txt, bert_model='finbert'):
         proba_list = large_text(input_ids, attention_mask, total_len, bert_model)
         return proba_list
 
-def get_mean_from_proba(proba_list):
+def ori_get_mean_from_proba(proba_list):
     # 0 - positive
     # 1 - negative
     # 2 - neutral
@@ -121,12 +220,7 @@ def get_mean_from_proba(proba_list):
         sentiment = torch.argmax(mean).item()
     return mean, sentiment, stacks
 
-# def full_sentiment_run(txt, bert_model='finbert'):
-#     proba_list = sentiment_analysis(txt, bert_model='finbert')
-#     mean, stacks, sentiment = get_mean_from_proba(proba_list)
-#     return 
-
-def sentiment_applier(df):
+def ori_sentiment_applier(df):
 
     if DEBUG:
         print(f'1-{df}')
@@ -136,9 +230,81 @@ def sentiment_applier(df):
 
     return mean, sentiment
 
+def sentiment_analysis(txt):
+    
+    bert_model = BertForSequenceClassification.from_pretrained(bert)
+    finbert_model = BertForSequenceClassification.from_pretrained(finbert)
+
+    if DEBUG:
+        print(f'2-{txt}')
+
+    bert_input_ids, bert_attention_mask, finbert_input_ids, finbert_attention_mask = text_tokenizer(txt)
+    window_length = 510
+
+    bert_total_len = len(bert_input_ids)    
+    finbert_total_len = len(finbert_input_ids)    
+   
+    if bert_total_len < window_length:
+        bert_proba_list, finbert_proba_list = small_text(bert_input_ids, bert_attention_mask, finbert_input_ids, finbert_attention_mask)
+        return bert_proba_list, finbert_proba_list
+    
+    elif bert_total_len >= window_length:
+        bert_proba_list, finbert_proba_list = large_text(bert_input_ids, bert_attention_mask, finbert_input_ids, finbert_attention_mask, bert_total_len)
+        return bert_proba_list, finbert_proba_list
+
+    if finbert_total_len < window_length:
+        bert_proba_list, finbert_proba_list = small_text(bert_input_ids, bert_attention_mask, finbert_input_ids, finbert_attention_mask)
+        return bert_proba_list, finbert_proba_list
+    
+    elif finbert_total_len >= window_length:
+        bert_proba_list, finbert_proba_list = large_text(bert_input_ids, bert_attention_mask, finbert_input_ids, finbert_attention_mask, finbert_total_len)
+        return bert_proba_list, finbert_proba_list
+
+def get_mean_from_proba(bert_proba_list, finbert_proba_list):
+    # 0 - positive
+    # 1 - negative
+    # 2 - neutral
+
+    with torch.no_grad():
+        bert_stacks = torch.stack(bert_proba_list)
+        finbert_stacks = torch.stack(finbert_proba_list)
+
+        bert_stacks = bert_stacks.resize(bert_stacks.shape[0], bert_stacks.shape[2])
+        finbert_stacks = finbert_stacks.resize(finbert_stacks.shape[0], finbert_stacks.shape[2])
+
+        bert_mean = bert_stacks.mean(dim=0)
+        finbert_mean = finbert_stacks.mean(dim=0)
+
+        bert_sentiment = torch.argmax(bert_mean).item()
+        finbert_sentiment = torch.argmax(finbert_mean).item()
+
+    return bert_mean, bert_sentiment, bert_stacks, finbert_mean, finbert_sentiment, finbert_stacks
+
+def bert_sentiment_applier(df):
+
+    if DEBUG:
+        print(f'1-{df}')
+
+    bert_proba_list, finbert_proba_list = sentiment_analysis(df)
+    
+    bert_mean, bert_sentiment, bert_stacks, finbert_mean, finbert_sentiment, finbert_stacks = get_mean_from_proba(bert_proba_list, finbert_proba_list)
+
+    return bert_mean, bert_sentiment
+
+def finbert_sentiment_applier(df):
+
+    if DEBUG:
+        print(f'1-{df}')
+
+    bert_proba_list, finbert_proba_list = sentiment_analysis(df)
+    
+    bert_mean, bert_sentiment, bert_stacks, finbert_mean, finbert_sentiment, finbert_stacks = get_mean_from_proba(bert_proba_list, finbert_proba_list)
+
+    return finbert_mean, finbert_sentiment
+
 ###################################################################################
 
-def sentiment_poster(df):
+def ori_sentiment_poster(df):
 
     body_list = []
     head_list = []
@@ -146,6 +312,9 @@ def sentiment_poster(df):
     if DEBUG:
         print(f'4 - {df}')
 
+    head_list.append(df['headline'].apply(lambda x: sentiment_applier(x)))
+    body_list.append(df['body'].apply(lambda x: sentiment_applier(x)))
+    
     head_list.append(df['headline'].apply(lambda x: sentiment_applier(x)))
     body_list.append(df['body'].apply(lambda x: sentiment_applier(x)))
     
@@ -163,5 +332,54 @@ def sentiment_poster(df):
         df.at[n, 'head_nega'] = float(list1[n][0][1])
         df.at[n, 'head_neut'] = float(list1[n][0][2])
         df.at[n, 'head_stmt'] = int(list1[n][1])
+
+    return df
+
+def sentiment_poster(df):
+
+    bert_body_list = []
+    bert_head_list = []
+
+    finbert_body_list = []
+    finbert_head_list = []
+
+    if DEBUG:
+        print(f'4 - {df}')
+
+    bert_head_list.append(df['headline'].apply(lambda x: bert_sentiment_applier(x)))
+    bert_body_list.append(df['body'].apply(lambda x: bert_sentiment_applier(x)))
+    
+    finbert_head_list.append(df['headline'].apply(lambda x: finbert_sentiment_applier(x)))
+    finbert_body_list.append(df['body'].apply(lambda x: finbert_sentiment_applier(x)))
+    
+    bert_list2 = bert_body_list[0]
+    bert_list1 = bert_head_list[0]
+
+    finbert_list2 = finbert_body_list[0]
+    finbert_list1 = finbert_head_list[0]
+
+    for n in range(len(bert_list2)): 
+        df.at[n, 'b_body_posi'] = float(bert_list2[n][0][0])
+        df.at[n, 'b_body_nega'] = float(bert_list2[n][0][1])
+        # df.at[n, 'body_neut'] = float(bert_list2[n][0][2])
+        df.at[n, 'b_body_stmt'] = int(bert_list2[n][1])
+
+    for n in range(len(bert_list1)): 
+        df.at[n, 'b_head_posi'] = float(bert_list1[n][0][0])
+        df.at[n, 'b_head_nega'] = float(bert_list1[n][0][1])
+        # df.at[n, 'head_neut'] = float(bert_list1[n][0][2])
+        df.at[n, 'b_head_stmt'] = int(bert_list1[n][1])
+
+    for n in range(len(finbert_list2)): 
+        df.at[n, 'fb_body_posi'] = float(finbert_list2[n][0][0])
+        df.at[n, 'fb_body_nega'] = float(finbert_list2[n][0][1])
+        df.at[n, 'fb_body_neut'] = float(finbert_list2[n][0][2])
+        df.at[n, 'fb_body_stmt'] = int(finbert_list2[n][1])
+
+    for n in range(len(finbert_list1)): 
+        df.at[n, 'fb_head_posi'] = float(finbert_list1[n][0][0])
+        df.at[n, 'fb_head_nega'] = float(finbert_list1[n][0][1])
+        df.at[n, 'fb_head_neut'] = float(finbert_list1[n][0][2])
+        df.at[n, 'fb_head_stmt'] = int(finbert_list1[n][1])
 
     return df

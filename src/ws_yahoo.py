@@ -151,20 +151,21 @@ def get_article_body(url):
 
 def dataframe_prep(news_df):
 
-    num = 5 # determines # rows
+    num = 2 # determines # rows
 
-    sentiment_probability = ['body_posi', 'body_nega', 'body_neut', 'head_posi', 'head_nega', 'head_neut']
-    sentiment_numeric = ['body_stmt', 'head_stmt']
+    sentiment_probability = ['fb_body_posi', 'fb_body_nega', 'fb_body_neut', 'fb_head_posi', 'fb_head_nega', 'fb_head_neut',
+        'b_body_posi', 'b_body_nega', 'b_head_posi', 'b_head_nega']
+    sentiment_numeric = ['fb_body_stmt', 'fb_head_stmt', 'b_body_stmt', 'b_head_stmt']
 
     print('Obtaining individual articles')
     
-    news_df['body'] = news_df['url'].apply(lambda x: get_article_body(x))
-    # news_df['body'] = news_df['url'].iloc[:num].apply(lambda x: get_article_body(x))
+    # news_df['body'] = news_df['url'].apply(lambda x: get_article_body(x))
+    news_df['body'] = news_df['url'].iloc[:num].apply(lambda x: get_article_body(x))
     
     print('Obtaining dates of articles')
     
-    news_df['date'] = news_df['url'].apply(lambda x: get_article_date(x))
-    # news_df['date'] = news_df['url'].iloc[:num].apply(lambda x: get_article_date(x))
+    # news_df['date'] = news_df['url'].apply(lambda x: get_article_date(x))
+    news_df['date'] = news_df['url'].iloc[:num].apply(lambda x: get_article_date(x))
     news_df = news_df.drop(news_df[news_df.date == ""].index)
     news_df['date'] = pd.to_datetime(news_df['date'], format='%Y-%m-%dT%H:%M:%S.%fZ').dt.date
     news_df[sentiment_probability] = float()
